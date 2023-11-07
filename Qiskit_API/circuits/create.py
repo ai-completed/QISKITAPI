@@ -1,81 +1,147 @@
-from qiskit import QuantumCircuit, transpile
-from qiskit.providers import JobStatus
-from qiskit.visualization import circuit_drawer
+from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, Instruction, transpile, Aer, execute, qasm
+import json
 
-class QiskitAPIWrapper:
-    def __init__(self, provider):
-        self.provider = provider
+class QuantumCircuitBuilder:
+    """
+    QuantumCircuitBuilder class for constructing quantum circuits.
 
-    def create_circuit(self, num_qubits=1):
+    Attributes:
+        num_qubits (int): Number of qubits in the circuit.
+        name (str): Name of the circuit.
+        qregs (list): List of QuantumRegister objects.
+        cregs (list): List of ClassicalRegister objects.
+        circuit (QuantumCircuit): The quantum circuit being built.
+    """
+
+    def __init__(self, num_qubits=1, name="my_circuit"):
         """
-        Create a quantum circuit with the specified number of qubits.
+        Initialize a QuantumCircuitBuilder instance.
 
         Args:
-            num_qubits (int): Number of qubits in the circuit.
+            num_qubits (int): Number of qubits in the circuit (default is 1).
+            name (str): Name of the circuit (default is "my_circuit").
+        """
+        self.num_qubits = num_qubits
+        self.name = name
+        self.qregs = [QuantumRegister(num_qubits, f"q{i}") for i in range(num_qubits)]
+        self.cregs = [ClassicalRegister(num_qubits, f"c{i}") for i in range(num_qubits)]
+        self.circuit = QuantumCircuit(*self.qregs, *self.cregs, name=name)
+
+    def add_hadamard(self, target_qubit):
+        """
+        Add a Hadamard gate to the circuit.
+
+        Args:
+            target_qubit (int): Index of the target qubit.
+        """
+        self.circuit.h(self.qregs[target_qubit])
+
+    def add_cnot(self, control_qubit, target_qubit):
+        """
+        Add a CNOT gate to the circuit.
+
+        Args:
+            control_qubit (int): Index of the control qubit.
+            target_qubit (int): Index of the target qubit.
+        """
+        self.circuit.cx(self.qregs[control_qubit], self.qregs[target_qubit])
+
+    def add_measurement(self, qubit, bit):
+        """
+        Add a measurement operation to the circuit.
+
+        Args:
+            qubit (int): Index of the qubit to measure.
+            bit (int): Index of the classical bit to store the measurement result.
+        """
+        self.circuit.measure(self.qregs[qubit], self.cregs[bit])
+
+    def add_custom_gate(self, gate_name, qubits, parameters=None, condition_bits=None, condition_values=None):
+        """
+        Add a custom gate to the circuit.
+
+        Args:
+            gate_name (str): Name of the custom gate.
+            qubits (list): List of qubit indices the gate acts on.
+            parameters (list, optional): List of gate parameters (default is None).
+            condition_bits (list, optional): List of condition qubit indices (default is None).
+            condition_values (list, optional): List of condition values (default is None).
+        """
+        if parameters is None:
+            parameters = []
+        if condition_bits is None:
+            condition_bits = []
+        if condition_values is None:
+            condition_values = []
+
+        custom_gate = Instruction(gate_name, len(qubits), len(condition_bits), parameters, condition_bits, condition_values)
+        self.circuit.append(custom_gate, qubits)
+
+    def build(self):
+        """
+        Build and return the quantum circuit.
 
         Returns:
-            QuantumCircuit: A quantum circuit object.
+            QuantumCircuit: The constructed quantum circuit.
         """
-        return QuantumCircuit(num_qubits)
+        return self.circuit
 
-    def transpile_circuit(self, circuit, backend):
+    def export_to_qasm(self, filename):
         """
-        Transpile a quantum circuit for a specific backend.
+        Export the quantum circuit to a QASM file.
 
         Args:
-            circuit (QuantumCircuit): The quantum circuit to transpile.
-            backend (str): The target backend for transpilation.
-
-        Returns:
-            QuantumCircuit: The transpiled quantum circuit.
+            filename (str): Name of the QASM file to save.
         """
-        transpiled_circuit = transpile(circuit, backend=backend, optimization_level=3)
-        return transpiled_circuit
+        qasm_str = qasm(self.circuit)
+        with open(filename, 'w') as file:
+            file.write(qasm_str)
 
-    def visualize_circuit(self, circuit):
+    def export_to_json(self, filename):
         """
-        Visualize a quantum circuit.
+        Export the quantum circuit to a JSON file.
 
         Args:
-            circuit (QuantumCircuit): The quantum circuit to visualize.
+            filename (str): Name of the JSON file to save.
         """
-        circuit_drawer(circuit, output="mpl")
+        circuit_dict = self.circuit.data(1)
+        with open(filename, 'w') as file:
+            json.dump(circuit_dict, file, indent=4)
 
-    def run_job(self, circuit, backend, shots=1024):
-        """
-        Run a quantum circuit on a specified backend.
+def create_custom_circuit():
+    """
+    Create a custom quantum circuit.
 
-        Args:
-            circuit (QuantumCircuit): The quantum circuit to run.
-            backend (str): The target backend for execution.
-            shots (int): The number of measurement shots.
+    Returns:
+        QuantumCircuit: The custom quantum circuit.
+    """
+    builder = QuantumCircuitBuilder(num_qubits=3, name="custom_circuit")
+    
+    # Build the circuit using high-level instructions
+    builder.add_hadamard(0)
+    builder.add_cnot(0, 1)
+    builder.add_measurement(1, 1)
+    
+    # Add a custom gate with parameters and conditions
+    builder.add_custom_gate("custom_gate", qubits=[0, 2], parameters=[1.57], condition_bits=[0], condition_values=[0])
+    
+    return builder.build()
 
-        Returns:
-            Job: A Qiskit job object.
-        """
-        job = self.provider.run(circuit, backend, shots=shots)
-        return job
+def main():
+    """
+    Main function to demonstrate the usage of the script.
+    """
+    # Example usage:
+    custom_circuit = create_custom_circuit()
 
-    def get_job_status(self, job):
-        """
-        Get the status of a job.
+    if custom_circuit:
+        # Export the circuit to QASM and JSON formats
+        custom_circuit.export_to_qasm("custom_circuit.qasm")
+        custom_circuit.export_to_json("custom_circuit.json")
 
-        Args:
-            job (Job): A Qiskit job object.
+        print("Circuit exported to QASM and JSON files.")
+    else:
+        print("Circuit creation failed. Please handle the error accordingly.")
 
-        Returns:
-            JobStatus: The status of the job.
-        """
-        return job.status()
-
-    def get_job_result(self, job):
-        """
-        Get the result of a completed job.
-
-        Args:
-            job (Job): A completed Qiskit job object.
-
-        Returns:
-            Result: The result of the job.
-        """
-        return job.result()
+if __name__ == "__main__":
+    main()
